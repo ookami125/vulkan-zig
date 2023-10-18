@@ -20,9 +20,16 @@ vulkan-zig aims to be always compatible with the ever-changing Zig master branch
 ### CLI-interface
 A CLI-interface is provided to generate vk.zig from the [Vulkan XML registry](https://github.com/KhronosGroup/Vulkan-Docs/blob/main/xml), which is built by default when invoking `zig build` in the project root. To generate vk.zig, simply invoke the program as follows:
 ```
-$ zig-out/bin/vulkan-zig-generator path/to/vk.xml output/path/to/vk.zig
+$ zig-out/bin/generator path/to/vk.xml output/path/to/vk.zig
 ```
 This reads the xml file, parses its contents, renders the Vulkan bindings, and formats file, before writing the result to the output path. While the intended usage of vulkan-zig is through direct generation from build.zig (see below), the CLI-interface can be used for one-off generation and vendoring the result.
+NOTE: you need to replace `path/to/vk.xml` with the spec path from whatever source you prefer, here are some examples orderered from the most recommended:
+- Vulkan SDK, you need the package installed on your system with environment path setup but its the most stable option:
+    /share/vulkan/registry/vk.xml
+- Vulkan-Headers repo, doesn't require the Vulkan SDK in the build environment:
+    https://github.com/KhronosGroup/Vulkan-Headers/blob/main/registry/vk.xml
+- local vk.xml inside examples:
+    vulkan-zig\examples\vk.xml
 
 ### Generation from build.zig
 Vulkan bindings can be generated from the Vulkan XML registry at compile time with build.zig, by using the provided Vulkan generation step:
@@ -281,27 +288,27 @@ pub const xcb_connection_t = if (@hasDecl(root, "xcb_connection_t")) root.xcb_co
 For some times (such as those from Google Games Platform) no default is known. Usage of these without providing a concrete type in the project root generates a compile error.
 
 ### Shader compilation
-vulkan-zig provides functionality to help compiling shaders to spir-v using glslc. It can be used from build.zig as follows:
+
+vulkan-zig provides functionality to help compile shaders to SPIR-V using glslc. It can be used from build.zig as follows:
 
 ```zig
-const vkgen = @import("vulkan-zig/generator/index.zig");
+const vkgen = @import("vulkan_zig");
 
 pub fn build(b: *Builder) void {
     ...
-    const exe = b.addExecutable("my-executable", "src/main.zig");
-
-    const gen = vkgen.VkGenerateStep(b, "path/to/vk.xml", "vk.zig");
-    exe.addPackage(gen.package);
-
     const shader_comp = vkgen.ShaderCompileStep.create(
         builder,
-        &[_][]const u8{"glslc", "--target-env=vulkan1.2"}, // Path to glslc and additional parameters
+        &[_][]const u8{"glslc", "--target-env=vulkan1.2"},
+        "-o",
     );
-    exe.addPackage(shader_comp.getPackage("shaders"));
-    shader_comp.add("shader", "path/to/shader.frag", .{});
+    shader_comp.add("shader_frag", "path/to/shader.frag", .{});
+    shader_comp.add("shader_vert", "path/to/shader.vert", .{});
+    exe.addModule("shaders", shader_comp.getModule());
 }
 ```
-Upon compilation, glslc is then invoked to compile each shader, and the result is placed within `zig-cache`. All shaders which are compiled using a particular `ShaderCompileStep` are imported in a single Zig file using `@embedFile`, and this file can be added to an executable as a package using `getPackage`. To slightly improve compile times, shader compilation is cached; as long as a shader's source and its compile commands stay the same, the shader is not recompiled. The spir-v code for any particular shader is aligned to that of a 32-bit integer as follows, as required by vkCreateShaderModule:
+
+Upon compilation, glslc is invoked to compile each shader, and the result is placed within `zig-cache`. All shaders which are compiled using a particular `ShaderCompileStep` are imported in a single Zig file using `@embedFile`, and this file can be added to an executable as a module using `addModule`. To slightly improve compile times, shader compilation is cached; as long as a shader's source and its compile commands stay the same, the shader is not recompiled. The SPIR-V code for any particular shader is aligned to that of a 32-bit integer as follows, as required by vkCreateShaderModule:
+
 ```zig
 pub const ${name} align(@alignOf(u32)) = @embedFile("${path}").*;
 ```
