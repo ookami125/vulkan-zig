@@ -1,5 +1,5 @@
 const std = @import("std");
-const vk = @import("vulkan");
+const vk = @import("vk.zig");
 const c = @import("c.zig");
 const Allocator = std.mem.Allocator;
 
@@ -8,6 +8,7 @@ const required_device_extensions = [_][*:0]const u8{vk.extension_info.khr_swapch
 const BaseDispatch = vk.BaseWrapper(.{
     .createInstance = true,
     .getInstanceProcAddr = true,
+	.enumerateInstanceLayerProperties = true,
 });
 
 const InstanceDispatch = vk.InstanceWrapper(.{
@@ -65,7 +66,10 @@ const DeviceDispatch = vk.DeviceWrapper(.{
     .freeMemory = true,
     .createBuffer = true,
     .destroyBuffer = true,
+    .createImage = true,
+    .destroyImage = true,
     .getBufferMemoryRequirements = true,
+	.getImageMemoryRequirements = true,
     .mapMemory = true,
     .unmapMemory = true,
     .bindBufferMemory = true,
@@ -73,10 +77,24 @@ const DeviceDispatch = vk.DeviceWrapper(.{
     .cmdEndRenderPass = true,
     .cmdBindPipeline = true,
     .cmdDraw = true,
+    .cmdDrawIndexed = true,
     .cmdSetViewport = true,
     .cmdSetScissor = true,
     .cmdBindVertexBuffers = true,
+    .cmdBindIndexBuffer = true,
     .cmdCopyBuffer = true,
+	.cmdCopyBufferToImage = true,
+
+	.bindImageMemory = true,
+	.cmdPipelineBarrier = true,
+	.createDescriptorSetLayout = true,
+	.destroyDescriptorSetLayout = true,
+	.createDescriptorPool = true,
+	.destroyDescriptorPool = true,
+	.allocateDescriptorSets = true,
+	.freeDescriptorSets = true,
+	.updateDescriptorSets = true,
+	.cmdBindDescriptorSets = true,
 });
 
 pub const GraphicsContext = struct {
@@ -101,6 +119,12 @@ pub const GraphicsContext = struct {
         var glfw_exts_count: u32 = 0;
         const glfw_exts = c.glfwGetRequiredInstanceExtensions(&glfw_exts_count);
 
+		var layer_count: u32 = 1;
+		const VK_LAYER_KHRONOS_validation: [*c]const u8 = "VK_LAYER_KHRONOS_validation";
+        const layers = [_][*c]const u8{ 
+			VK_LAYER_KHRONOS_validation
+		};
+
         const app_info = vk.ApplicationInfo{
             .p_application_name = app_name,
             .application_version = vk.makeApiVersion(0, 0, 0, 0),
@@ -109,8 +133,20 @@ pub const GraphicsContext = struct {
             .api_version = vk.API_VERSION_1_2,
         };
 
+		var property_count: u32 = 0;
+		_ = try self.vkb.enumerateInstanceLayerProperties(&property_count, null);
+		var properties = try allocator.alloc(vk.LayerProperties, property_count);
+		defer allocator.free(properties);
+		_ = try self.vkb.enumerateInstanceLayerProperties(&property_count, properties.ptr);
+
+		for(properties) |property| {
+			std.debug.print("{s}: {s}\n", .{property.layer_name, property.description});
+		}
+
         self.instance = try self.vkb.createInstance(&.{
             .p_application_info = &app_info,
+			.enabled_layer_count = layer_count,
+			.pp_enabled_layer_names = @as([*]const [*:0]const u8, @ptrCast(&layers)),
             .enabled_extension_count = glfw_exts_count,
             .pp_enabled_extension_names = @as([*]const [*:0]const u8, @ptrCast(glfw_exts)),
         }, null);
@@ -237,6 +273,15 @@ fn pickPhysicalDevice(
     defer allocator.free(pdevs);
 
     _ = try vki.enumeratePhysicalDevices(instance, &device_count, pdevs.ptr);
+
+    for (pdevs) |pdev| {
+    	const props = vki.getPhysicalDeviceProperties(pdev);
+    	if(std.mem.lastIndexOf(u8, &props.device_name, "NVIDIA") != null) {
+			if (try checkSuitable(vki, pdev, allocator, surface)) |candidate| {
+				return candidate;
+			}
+		}
+    }
 
     for (pdevs) |pdev| {
         if (try checkSuitable(vki, pdev, allocator, surface)) |candidate| {

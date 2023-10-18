@@ -1,5 +1,5 @@
 const std = @import("std");
-const vk = @import("vulkan");
+const vk = @import("vk.zig");
 const GraphicsContext = @import("graphics_context.zig").GraphicsContext;
 const Allocator = std.mem.Allocator;
 

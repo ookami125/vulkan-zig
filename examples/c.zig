@@ -3,7 +3,7 @@ pub usingnamespace @cImport({
     @cInclude("GLFW/glfw3.h");
 });
 
-const vk = @import("vulkan");
+const vk = @import("vk.zig");
 const c = @This();
 
 // usually the GLFW vulkan functions are exported if Vulkan is included,
